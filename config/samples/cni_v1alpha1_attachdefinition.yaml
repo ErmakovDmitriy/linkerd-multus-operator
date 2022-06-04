@@ -1,0 +1,6 @@
+apiVersion: cni.linkerd.io/v1alpha1
+kind: AttachDefinition
+metadata:
+  name: attachdefinition-sample
+spec:
+  # TODO(user): Add fields here

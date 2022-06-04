@@ -1,0 +1,19 @@
+domain: linkerd.io
+layout:
+- go.kubebuilder.io/v3
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: linkerd-multus-operator
+repo: github.com/ErmakovDmitriy/linkerd-cni-attach-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: linkerd.io
+  group: cni
+  kind: AttachDefinition
+  path: github.com/ErmakovDmitriy/linkerd-cni-attach-operator/api/v1alpha1
+  version: v1alpha1
+version: "3"

@@ -1,0 +1,15 @@
+apiVersion: cni.linkerd.io/v1alpha1
+kind: AttachDefinition
+metadata:
+  name: att-def-1
+spec:
+  createMultusNetworkAttachmentDefinition: true
+  proxyConfig:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    proxyUID: 13533
