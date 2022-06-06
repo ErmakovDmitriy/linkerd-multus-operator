@@ -27,12 +27,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 //+kubebuilder:webhook:path=/annotate-v1-pod,mutating=true,failurePolicy=ignore,groups="",resources=pods,verbs=create;update,versions=v1,name=attachdefinition.cni.linkerd.io,admissionReviewVersions=v1,sideEffects=None
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;versions=v1
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;versions=v1
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;versions=v1
 
 type PodAnnotator struct {
 	Client  client.Client
@@ -40,16 +42,24 @@ type PodAnnotator struct {
 }
 
 func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admission.Response {
+	logger := log.FromContext(ctx).WithValues("namespace", req.Namespace, "name", req.Name)
+
 	pod := &corev1.Pod{}
 	err := a.decoder.Decode(req, pod)
 	if err != nil {
+		logger.Error(err, "can not decode v1.Pod")
+
 		return admission.Errored(http.StatusBadRequest, err)
 	}
+
+	logger.Info("Received admission request for Pod")
 
 	var isAnnotationRequested bool
 
 	podAnnotation, ok := pod.Annotations[constants.LinkerdInjectAnnotation]
 	if ok && (podAnnotation == "enabled" || podAnnotation == "ingress") {
+		logger.Info("Pod contains inject annotation", constants.LinkerdInjectAnnotation, podAnnotation)
+
 		isAnnotationRequested = true
 	} else {
 		// Check Namespace.
@@ -58,22 +68,32 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 			namespaceRef = client.ObjectKey{Namespace: pod.Namespace}
 		)
 
+		logger.Info("Checking Namespace annotation")
+
 		if err := a.Client.Get(ctx, namespaceRef, namespace); err != nil {
 			if errors.IsNotFound(err) {
+				logger.Error(err, "Namespace not found")
+
 				return admission.Errored(http.StatusNotFound,
 					fmt.Errorf("can not get Pod Namespace %s: %w", namespaceRef.Name, err))
 			}
+
+			logger.Error(err, "Get Namespace error")
 
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
 
 		namespaceAnnot, ok := namespace.Annotations[constants.LinkerdInjectAnnotation]
 		if ok && (namespaceAnnot == "enabled" || namespaceAnnot == "ingress") {
+			logger.Info("Namespace contains inject annotation", constants.LinkerdInjectAnnotation, namespaceAnnot)
+
 			isAnnotationRequested = true
 		}
 	}
 
 	if !isAnnotationRequested {
+		logger.Info("Multus NetworkAttachmentDefinition is not required as neither Pod nor Namespace require Linkerd proxy inject")
+
 		return admission.Allowed("No Multus annotation required")
 	}
 
@@ -83,10 +103,16 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 		multusRef = client.ObjectKey{Namespace: pod.Namespace, Name: constants.LinkerdCNINetworkAttachmentDefinitionName}
 	)
 
+	logger.Info("Trying to get MultusNetworkAttachmentDefinition", "multusRef", multusRef.String())
+
 	if err := a.Client.Get(ctx, multusRef, multus); err != nil {
 		if errors.IsNotFound(err) {
+			logger.Info("No Multus NetworkAttachmentDefinition in the Namespace")
+
 			return admission.Allowed("Multus NetworkAttachDefinition " + constants.LinkerdCNINetworkAttachmentDefinitionName + "is not in Namespace")
 		}
+
+		logger.Error(err, "Can not get Multus NetworkAttachmentDefinition")
 
 		return admission.Errored(http.StatusInternalServerError,
 			fmt.Errorf("can not get Multus NetworkAttachDefinition %s: %w", multusRef.String(), err))
@@ -94,11 +120,16 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 
 	// Patch.
 	currentNetworks, ok := pod.Annotations[constants.MultusNetworkAttachAnnotation]
+
+	logger.Info("Pod annotation is", constants.MultusNetworkAttachAnnotation, currentNetworks)
+
 	if ok {
 		pod.Annotations[constants.MultusNetworkAttachAnnotation] = currentNetworks + "," + constants.LinkerdCNINetworkAttachmentDefinitionName
 	} else {
 		pod.Annotations[constants.MultusNetworkAttachAnnotation] = constants.LinkerdCNINetworkAttachmentDefinitionName
 	}
+
+	logger.Info("New Pod annotation is", constants.MultusNetworkAttachAnnotation, pod.Annotations[constants.MultusNetworkAttachAnnotation])
 
 	marshaledPod, err := json.Marshal(pod)
 	if err != nil {
