@@ -49,6 +49,7 @@ const (
 	EnvCNIConfigMapNamespace = EnvVarPrefix + "CNI_CM_NAMESPACE"
 	EnvCNIConfigMapName      = EnvVarPrefix + "CNI_CM_NAME"
 	EnvCNIConfigMapKey       = EnvVarPrefix + "CNI_CM_KEY"
+	EnvCNIKubeconfig         = EnvVarPrefix + "KUBECONFIG"
 )
 
 const (
@@ -57,6 +58,10 @@ const (
 	DefaultLinkerdCNICMNamespace = "linkerd-cni"
 	DefaultLinkerdCNICMName      = "linkerd-cni-config"
 	DefaultLinkerdCNICMKey       = "cni_network_config"
+
+	// DefaultLinkerdCNIKubeconfigName - used the name which is created by
+	// Linkerd-CNI DaemonSet.
+	DefaultLinkerdCNIKubeconfigPath = "/etc/cni/net.d/ZZZ-linkerd-cni-kubeconfig"
 )
 
 var (
@@ -113,6 +118,11 @@ func main() {
 		instanceName = DefaultInstanceName
 	}
 
+	var cniKubeconfig = os.Getenv(EnvCNIKubeconfig)
+	if cniKubeconfig == "" {
+		cniKubeconfig = DefaultLinkerdCNIKubeconfigPath
+	}
+
 	// Check that instance name is not too long.
 	const maxInstanceNameLen = 30
 	if len(instanceName) > maxInstanceNameLen {
@@ -137,21 +147,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Multus NetAttachDefinition controller.
-	if err = (&controllers.MultusNetAttachDefinitionReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		InstanceName: instanceName,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "MultusNetAttachDefinitionReconciler")
-		os.Exit(1)
-	}
-
 	// Linkerd AttachDefinition controller.
-	if err = (&controllers.AttachDefinitionReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		InstanceName: instanceName,
+	var attachReconciler = &controllers.AttachDefinitionReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		InstanceName:  instanceName,
+		CNIKubeconfig: cniKubeconfig,
 		CNIConfigMapRef: controllers.CNIConfigMapRef{
 			ObjectKey: types.NamespacedName{
 				Namespace: configMapNamespace,
@@ -159,10 +160,24 @@ func main() {
 			},
 			Key: configMapKey,
 		},
-	}).SetupWithManager(mgr); err != nil {
+	}
+
+	if err = attachReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AttachDefinition")
 		os.Exit(1)
 	}
+
+	// Multus NetAttachDefinition controller.
+	if err = (&controllers.MultusNetAttachDefinitionReconciler{
+		Client:                 mgr.GetClient(),
+		Scheme:                 mgr.GetScheme(),
+		InstanceName:           instanceName,
+		AttachReconcileTrigger: attachReconciler.Reconcile,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "MultusNetAttachDefinitionReconciler")
+		os.Exit(1)
+	}
+
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

@@ -26,7 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"errors"
 
@@ -41,6 +43,7 @@ type AttachDefinitionReconciler struct {
 	client.Client
 	Scheme          *runtime.Scheme
 	InstanceName    string
+	CNIKubeconfig   string
 	CNIConfigMapRef CNIConfigMapRef
 }
 
@@ -63,13 +66,13 @@ type CNIConfigMapRef struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.2/pkg/reconcile
 func (r *AttachDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx).WithValues("AttachDefinition", req.NamespacedName)
 
-	_ = logger
+	logger.Info("Received event")
 
 	multusRef := client.ObjectKey{
 		Namespace: req.Namespace,
-		Name:      computeMultusNetAttachResourceName(req.Name),
+		Name:      LinkerdCNINetworkAttachmentDefinitionName,
 	}
 
 	var linkerdAttach = &cniv1alpha1.AttachDefinition{}
@@ -86,18 +89,21 @@ func (r *AttachDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	// Multus NetworkAttachmentDefinition is not requested - delete.
 	if !linkerdAttach.Spec.CreateMultusNetworkAttachmentDefinition {
+		logger.Info("createMultusNetworkAttachmentDefinition is false, delete NetworkAttachmentDefinition")
+
 		return ctrl.Result{}, r.deleteMultusNetAttach(ctx, multusRef)
 	}
 
 	// Create/Update Multus NetworkAttachmentDefinition.
 
 	// Load CNI Plugin configuration from a Linkerd CNI plugin ConfigMap.
-	cniConfig, err := r.getLinkerdCNIConfig(ctx)
+	cniConfigDefault, err := r.getLinkerdCNIConfig(ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	//	ToDo: Merge Linkerd CNI ConfigMap and linkerdAttach before further steps.
+	// Merge Linkerd CNI ConfigMap and linkerdAttach before further steps.
+	var cniConfig = applyAttachDefinition(cniConfigDefault, linkerdAttach)
 
 	var currentMultusNetAttach = &netattachv1.NetworkAttachmentDefinition{}
 
@@ -129,6 +135,8 @@ func (r *AttachDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	currentMultusNetAttach.Spec.Config = requiredMultusNetAttach.Spec.Config
 
+	logger.Info("Updating Multus NetworkAttachmentDefinition")
+
 	if err := r.Update(ctx, currentMultusNetAttach); err != nil {
 		logger.Error(err, "can not update NetworkAttachmentDefinition")
 
@@ -143,6 +151,20 @@ func (r *AttachDefinitionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&cniv1alpha1.AttachDefinition{}).
 		Named("AttachDefinitionReconciler").
+		WithEventFilter(predicate.Funcs{
+			CreateFunc: func(ce event.CreateEvent) bool {
+				return ce.Object.GetName() == LinkerdCNINetworkAttachmentDefinitionName
+			},
+			UpdateFunc: func(ue event.UpdateEvent) bool {
+				return ue.ObjectNew.GetName() == LinkerdCNINetworkAttachmentDefinitionName || ue.ObjectOld.GetName() == LinkerdCNINetworkAttachmentDefinitionName
+			},
+			DeleteFunc: func(de event.DeleteEvent) bool {
+				return de.Object.GetName() == LinkerdCNINetworkAttachmentDefinitionName
+			},
+			GenericFunc: func(ge event.GenericEvent) bool {
+				return ge.Object.GetName() == LinkerdCNINetworkAttachmentDefinitionName
+			},
+		}).
 		Complete(r)
 }
 
@@ -150,9 +172,10 @@ func (r *AttachDefinitionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *AttachDefinitionReconciler) deleteMultusNetAttach(
 	ctx context.Context, multusRef client.ObjectKey) error {
 	logger := log.FromContext(ctx).WithValues(
-		"namespace", multusRef.Namespace,
-		"name", multusRef.Name,
-		"resource", "k8s.cni.cncf.io/v1/NetworkAttachmentDefinition")
+		"k8s.cni.cncf.io/v1/NetworkAttachmentDefinition",
+		multusRef.Namespace+"/"+multusRef.Name)
+
+	logger.Info("Deleting Multus NetworkAttachmentDefinition")
 
 	var multusNetAttach = &netattachv1.NetworkAttachmentDefinition{}
 
@@ -189,11 +212,11 @@ func (r *AttachDefinitionReconciler) deleteMultusNetAttach(
 
 func (r *AttachDefinitionReconciler) createMultusNetAttach(ctx context.Context,
 	multusRef client.ObjectKey, config *CNIPluginConf) error {
-	var logger = log.FromContext(ctx).WithValues(
-		"namespace", multusRef.Namespace,
-		"name", multusRef.Name,
-		"resource", "k8s.cni.cncf.io/v1/NetworkAttachmentDefinition",
-	)
+	logger := log.FromContext(ctx).WithValues(
+		"k8s.cni.cncf.io/v1/NetworkAttachmentDefinition",
+		multusRef.Namespace+"/"+multusRef.Name)
+
+	logger.Info("Creating Multus NetworkAttachmentDefinition")
 
 	multusNetAttach, err := newMultusNetworkAttachDefinition(multusRef, config)
 	if err != nil {
@@ -211,10 +234,11 @@ func (r *AttachDefinitionReconciler) createMultusNetAttach(ctx context.Context,
 	return nil
 }
 
-// getLinkerdCNIConfig - loads CNI Plugin configuration from a Linkerd CNI plugin ConfigMap.
+// getLinkerdCNIConfig - loads CNI Plugin configuration from a Linkerd CNI plugin ConfigMap
+// with patched KUBECONFIG path with the operator's provided value.
 func (r *AttachDefinitionReconciler) getLinkerdCNIConfig(ctx context.Context) (*CNIPluginConf, error) {
-	logger := log.FromContext(ctx).WithValues("resource", "ConfigMap",
-		"namespace", r.CNIConfigMapRef.Namespace, "name", r.CNIConfigMapRef.Name)
+	logger := log.FromContext(ctx).WithValues("v1/ConfigMap",
+		r.CNIConfigMapRef.Namespace+"/"+r.CNIConfigMapRef.Name)
 
 	var cniConfigMap = &corev1.ConfigMap{}
 	if err := r.Get(ctx, r.CNIConfigMapRef.ObjectKey, cniConfigMap); err != nil {
@@ -239,6 +263,9 @@ func (r *AttachDefinitionReconciler) getLinkerdCNIConfig(ctx context.Context) (*
 
 		return nil, err
 	}
+
+	// Set Kubeconfig.
+	cniConfig.Kubernetes.Kubeconfig = r.CNIKubeconfig
 
 	return cniConfig, nil
 }
