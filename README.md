@@ -1,8 +1,33 @@
 # linkerd-multus-operator
-// TODO(user): Add simple overview of use/purpose
+
+This operator manager Multus NetworkAttachmentDefinition resources based on Linkerd AttachDefinition
+resources in a Namespace.
+
+The intention is to provide support for Linkerd in Openshift environment.
+Openshift uses Multus which does not support CNI chaining, so the CNIs must be called as NetworkAttachmentDefinitions.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+The project defines a CRD [AttachDefinition](api/v1alpha1/attachdefinition_types.go)
+which at the moment just shows to the operator that the NetworkAttachmentDefinition must be created.
+
+The operator also provides a mutating webhook to annotate Pods which have `linkerd.io/inject`
+annotation with `k8s.v1.cni.cncf.io/networks` annotation to make Multus call linkerd-cni plugin.
+
+To use this operator a customized linkerd-cni must be deployed in an Openshift cluster from
+`https://github.com/ErmakovDmitriy/linkerd2` repository. A build is provided at
+[Docker Hub](https://hub.docker.com/repository/docker/demonihin/linkerd2-cni).
+
+The only change from the upstream Linkerd CNI is that the customized plugin returns a dummy CNI JSON result,
+if nothing is provided from a previous plugin (support to be called as a stand-alone, not chained).
+
+The built container image is available at [Docker Hub](https://hub.docker.com/repository/docker/demonihin/linkerd-multus-operator).
+
+This application should be treated just as a proof of concept.
+
+A future idea is to modify linkerd proxy-injector to support a Pod proxy customizations
+based on the AttachDefinition resource which may improve Openshift support because the default
+settings (specifically a static ProxyUID) are not allowed by default in Openshift.
 
 ## Getting Started
 You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.

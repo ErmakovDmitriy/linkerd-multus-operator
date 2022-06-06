@@ -35,8 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	podwebhook "github.com/ErmakovDmitriy/linkerd-cni-attach-operator/api/v1"
 	cniv1alpha1 "github.com/ErmakovDmitriy/linkerd-cni-attach-operator/api/v1alpha1"
-	"github.com/ErmakovDmitriy/linkerd-cni-attach-operator/webhooks"
 
 	netattachv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
@@ -182,7 +182,7 @@ func main() {
 
 	// Create mutating webhook.
 	mgr.GetWebhookServer().Register("/annotate-v1-pod", &webhook.Admission{
-		Handler: &webhooks.PodAnnotator{
+		Handler: &podwebhook.PodAnnotator{
 			Client: mgr.GetClient(),
 		},
 	})

@@ -11,14 +11,18 @@ rules:
   - namespaces
   verbs:
   - get
+  - list
   - versions=v1
+  - watch
 - apiGroups:
   - ""
   resources:
   - pods
   verbs:
   - get
+  - list
   - versions=v1
+  - watch
 - apiGroups:
   - cni.linkerd.io
   resources:

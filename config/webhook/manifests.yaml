@@ -12,7 +12,7 @@ webhooks:
       name: webhook-service
       namespace: system
       path: /annotate-v1-pod
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: attachdefinition.cni.linkerd.io
   rules:
   - apiGroups:
