@@ -65,7 +65,7 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 		// Check Namespace.
 		var (
 			namespace    = &corev1.Namespace{}
-			namespaceRef = client.ObjectKey{Namespace: pod.Namespace}
+			namespaceRef = client.ObjectKey{Name: pod.Namespace}
 		)
 
 		logger.Info("Checking Namespace annotation")
@@ -75,7 +75,7 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 				logger.Error(err, "Namespace not found")
 
 				return admission.Errored(http.StatusNotFound,
-					fmt.Errorf("can not get Pod Namespace %s: %w", namespaceRef.Name, err))
+					fmt.Errorf("can not get Pod Namespace %s: %w", namespaceRef.String(), err))
 			}
 
 			logger.Error(err, "Get Namespace error")
