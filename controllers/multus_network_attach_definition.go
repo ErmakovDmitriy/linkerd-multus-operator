@@ -5,19 +5,12 @@ import (
 	"strconv"
 
 	cniv1alpha1 "github.com/ErmakovDmitriy/linkerd-cni-attach-operator/api/v1alpha1"
+	"github.com/ErmakovDmitriy/linkerd-cni-attach-operator/constants"
 	"github.com/containernetworking/cni/pkg/types"
 	netattachv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-const (
-	LinkerdCNIVersion = "0.3.0"
-	LinkerdCNIName    = "linkerd-cni"
-	LinkerdCNIType    = "linkerd-cni"
-
-	LinkerdCNINetworkAttachmentDefinitionName = "linkerd-cni"
 )
 
 // ProxyInit is the configuration for the proxy-init binary.
@@ -49,9 +42,9 @@ type CNIPluginConf struct {
 func newCNIPluginConf() *CNIPluginConf {
 	return &CNIPluginConf{
 		NetConf: types.NetConf{
-			CNIVersion: LinkerdCNIVersion,
-			Name:       LinkerdCNIName,
-			Type:       LinkerdCNIType,
+			CNIVersion: constants.LinkerdCNIVersion,
+			Name:       constants.LinkerdCNIName,
+			Type:       constants.LinkerdCNIType,
 		},
 	}
 }
@@ -60,8 +53,8 @@ func newMultusNetworkAttachDefinition(
 	multusRef client.ObjectKey, config *CNIPluginConf) (*netattachv1.NetworkAttachmentDefinition, error) {
 	var multusNetAttach = &netattachv1.NetworkAttachmentDefinition{
 		TypeMeta: v1.TypeMeta{
-			Kind:       "NetworkAttachmentDefinition",
-			APIVersion: "k8s.cni.cncf.io/v1",
+			Kind:       constants.MultusNetworkAttachmentDefinitionResourceKind,
+			APIVersion: constants.MultusNetworkAttachmentDefinitionAPIVersion,
 		},
 		ObjectMeta: v1.ObjectMeta{
 			Name:      multusRef.Name,

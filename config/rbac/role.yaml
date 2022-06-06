@@ -6,6 +6,20 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - versions=v1
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - versions=v1
+- apiGroups:
   - cni.linkerd.io
   resources:
   - attachdefinitions

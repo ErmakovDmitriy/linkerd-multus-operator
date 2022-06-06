@@ -33,6 +33,7 @@ import (
 	"errors"
 
 	cniv1alpha1 "github.com/ErmakovDmitriy/linkerd-cni-attach-operator/api/v1alpha1"
+	"github.com/ErmakovDmitriy/linkerd-cni-attach-operator/constants"
 	netattachv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 )
 
@@ -72,7 +73,7 @@ func (r *AttachDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	multusRef := client.ObjectKey{
 		Namespace: req.Namespace,
-		Name:      LinkerdCNINetworkAttachmentDefinitionName,
+		Name:      constants.LinkerdCNINetworkAttachmentDefinitionName,
 	}
 
 	var linkerdAttach = &cniv1alpha1.AttachDefinition{}
@@ -153,16 +154,16 @@ func (r *AttachDefinitionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named("AttachDefinitionReconciler").
 		WithEventFilter(predicate.Funcs{
 			CreateFunc: func(ce event.CreateEvent) bool {
-				return ce.Object.GetName() == LinkerdCNINetworkAttachmentDefinitionName
+				return ce.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
 			},
 			UpdateFunc: func(ue event.UpdateEvent) bool {
-				return ue.ObjectNew.GetName() == LinkerdCNINetworkAttachmentDefinitionName || ue.ObjectOld.GetName() == LinkerdCNINetworkAttachmentDefinitionName
+				return ue.ObjectNew.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName || ue.ObjectOld.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
 			},
 			DeleteFunc: func(de event.DeleteEvent) bool {
-				return de.Object.GetName() == LinkerdCNINetworkAttachmentDefinitionName
+				return de.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
 			},
 			GenericFunc: func(ge event.GenericEvent) bool {
-				return ge.Object.GetName() == LinkerdCNINetworkAttachmentDefinitionName
+				return ge.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
 			},
 		}).
 		Complete(r)
@@ -213,7 +214,7 @@ func (r *AttachDefinitionReconciler) deleteMultusNetAttach(
 func (r *AttachDefinitionReconciler) createMultusNetAttach(ctx context.Context,
 	multusRef client.ObjectKey, config *CNIPluginConf) error {
 	logger := log.FromContext(ctx).WithValues(
-		"k8s.cni.cncf.io/v1/NetworkAttachmentDefinition",
+		constants.MultusNetworkAttachmentDefinitionAPIVersion+"/"+constants.MultusNetworkAttachmentDefinitionResourceKind,
 		multusRef.Namespace+"/"+multusRef.Name)
 
 	logger.Info("Creating Multus NetworkAttachmentDefinition")
