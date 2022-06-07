@@ -42,7 +42,9 @@ type PodAnnotator struct {
 }
 
 func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admission.Response {
-	logger := log.FromContext(ctx).WithValues("namespace", req.Namespace, "name", req.Name)
+	logger := log.FromContext(ctx).WithValues("request_namespace", req.Namespace, "request_name", req.Name)
+
+	logger.Info("Received admission request", "request", req)
 
 	pod := &corev1.Pod{}
 	err := a.decoder.Decode(req, pod)
@@ -52,7 +54,7 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
-	logger.Info("Received admission request for Pod")
+	logger.Info("Loaded Pod info", "pod_namespace", req.Namespace, "pod_generate_name", pod.GenerateName)
 
 	var isAnnotationRequested bool
 
@@ -65,20 +67,20 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 		// Check Namespace.
 		var (
 			namespace    = &corev1.Namespace{}
-			namespaceRef = client.ObjectKey{Name: pod.Namespace}
+			namespaceRef = client.ObjectKey{Name: req.Namespace}
 		)
 
-		logger.Info("Checking Namespace annotation")
+		logger.Info("Checking Namespace annotation", "namespaceRef", namespaceRef.Name)
 
 		if err := a.Client.Get(ctx, namespaceRef, namespace); err != nil {
 			if errors.IsNotFound(err) {
-				logger.Error(err, "Namespace not found")
+				logger.Error(err, "can not get Pod Namespace", "namespaceRef", namespaceRef.Name)
 
 				return admission.Errored(http.StatusNotFound,
-					fmt.Errorf("can not get Pod Namespace %s: %w", namespaceRef.String(), err))
+					fmt.Errorf("can not get Pod Namespace, namespaceRef=%s, error=%w", namespaceRef.Name, err))
 			}
 
-			logger.Error(err, "Get Namespace error")
+			logger.Error(err, "Get Namespace error", "namespaceRef", namespaceRef.Name)
 
 			return admission.Errored(http.StatusInternalServerError, err)
 		}
@@ -100,22 +102,22 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 	// Check if Multus NetworkAttachDefinition is in the Pod's namespace.
 	var (
 		multus    = &netattachv1.NetworkAttachmentDefinition{}
-		multusRef = client.ObjectKey{Namespace: pod.Namespace, Name: constants.LinkerdCNINetworkAttachmentDefinitionName}
+		multusRef = client.ObjectKey{Namespace: req.Namespace, Name: constants.LinkerdCNINetworkAttachmentDefinitionName}
 	)
 
 	logger.Info("Trying to get MultusNetworkAttachmentDefinition", "multusRef", multusRef.String())
 
 	if err := a.Client.Get(ctx, multusRef, multus); err != nil {
 		if errors.IsNotFound(err) {
-			logger.Info("No Multus NetworkAttachmentDefinition in the Namespace")
+			logger.Info("Multus NetworkAttachDefinition " + constants.LinkerdCNINetworkAttachmentDefinitionName + "is not in Namespace")
 
 			return admission.Allowed("Multus NetworkAttachDefinition " + constants.LinkerdCNINetworkAttachmentDefinitionName + "is not in Namespace")
 		}
 
-		logger.Error(err, "Can not get Multus NetworkAttachmentDefinition")
+		logger.Error(err, "Can not get Multus NetworkAttachmentDefinition", "multusRef=", multusRef.String())
 
 		return admission.Errored(http.StatusInternalServerError,
-			fmt.Errorf("can not get Multus NetworkAttachDefinition %s: %w", multusRef.String(), err))
+			fmt.Errorf("can not get Multus NetworkAttachDefinition, multusRef=%s, error=%w", multusRef.String(), err))
 	}
 
 	// Patch.
@@ -133,6 +135,8 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 
 	marshaledPod, err := json.Marshal(pod)
 	if err != nil {
+		logger.Error(err, "can not json.Marshal patched Pod definition")
+
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
