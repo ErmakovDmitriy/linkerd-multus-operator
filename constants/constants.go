@@ -8,6 +8,8 @@ const (
 	LinkerdCNINetworkAttachmentDefinitionName = "linkerd-cni"
 
 	LinkerdInjectAnnotation = "linkerd.io/inject"
+
+	LinkerdProxyUIDAnnotation = "config.linkerd.io/proxy-uid"
 )
 
 const (

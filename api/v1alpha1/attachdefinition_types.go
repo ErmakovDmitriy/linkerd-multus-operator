@@ -110,6 +110,7 @@ type ProxyConfig struct {
 	// config.linkerd.io/proxy-log-level.
 	LogLevel string `json:"logLevel,omitempty" yaml:"logLevel,omitempty"`
 
+	// +kubebuilder:validation:Required
 	// config.linkerd.io/proxy-version.
 	ProxyUID *uint32 `json:"proxyUID,omitempty" yaml:"proxyUID,omitempty"`
 }

@@ -21,8 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/ErmakovDmitriy/linkerd-cni-attach-operator/constants"
+	"github.com/ErmakovDmitriy/linkerd-cni-attach-operator/controllers"
 	netattachv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -120,13 +123,41 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 			fmt.Errorf("can not get Multus NetworkAttachDefinition, multusRef=%s, error=%w", multusRef.String(), err))
 	}
 
-	// Patch.
+	// Patch ProxyUID from the Multus definition if necessary.
+	if _, ok := pod.Annotations[constants.LinkerdProxyUIDAnnotation]; !ok {
+		var linkerdCNIConfig = &controllers.CNIPluginConf{}
+
+		if err := json.Unmarshal([]byte(multus.Spec.Config), linkerdCNIConfig); err != nil {
+			logger.Error(err, "can not Unmarshal Multus.Spec.Config to CNIPluginConf")
+
+			return admission.Errored(http.StatusInternalServerError, fmt.Errorf(
+				"can not Unmarshal Multus.Spec.Config to CNIPluginConf, multus=%s, error=%w",
+				multusRef.String(), err))
+		}
+
+		pod.Annotations[constants.LinkerdProxyUIDAnnotation] = strconv.Itoa(linkerdCNIConfig.Linkerd.ProxyUID)
+	}
+
+	// Patch NetworkAttachmentDefinition.
 	currentNetworks, ok := pod.Annotations[constants.MultusNetworkAttachAnnotation]
 
 	logger.Info("Pod annotation is", constants.MultusNetworkAttachAnnotation, currentNetworks)
 
 	if ok {
-		pod.Annotations[constants.MultusNetworkAttachAnnotation] = currentNetworks + "," + constants.LinkerdCNINetworkAttachmentDefinitionName
+		// Check that there is no the Linkerd CNI annotation already.
+		nets := strings.Split(currentNetworks, ",")
+
+		var isAnnotationNeeded bool = true
+		for _, net := range nets {
+			if net == constants.LinkerdCNINetworkAttachmentDefinitionName {
+				isAnnotationNeeded = false
+				break
+			}
+		}
+
+		if isAnnotationNeeded {
+			pod.Annotations[constants.MultusNetworkAttachAnnotation] = currentNetworks + "," + constants.LinkerdCNINetworkAttachmentDefinitionName
+		}
 	} else {
 		pod.Annotations[constants.MultusNetworkAttachAnnotation] = constants.LinkerdCNINetworkAttachmentDefinitionName
 	}

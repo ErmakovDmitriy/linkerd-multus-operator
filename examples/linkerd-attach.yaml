@@ -12,4 +12,4 @@ spec:
     #   limits:
     #     cpu: 100m
     #     memory: 64Mi
-    # proxyUID: 13533
+    proxyUID: 1000681000
