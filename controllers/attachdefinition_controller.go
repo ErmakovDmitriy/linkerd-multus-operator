@@ -26,9 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"errors"
 
@@ -37,6 +35,7 @@ import (
 	netattachv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 )
 
+// nolint:stylecheck // The error text starts from the name of the application, so capital letter.
 var ErrCNIConfigMapKeyNotFound = errors.New("Linkerd CNI ConfigMap does not contain required key")
 
 // AttachDefinitionReconciler reconciles a AttachDefinition object
@@ -78,8 +77,7 @@ func (r *AttachDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	var linkerdAttach = &cniv1alpha1.AttachDefinition{}
 
-	err := r.Get(ctx, req.NamespacedName, linkerdAttach)
-	if err != nil {
+	if err := r.Get(ctx, req.NamespacedName, linkerdAttach); err != nil {
 		// Delete dependent resources - Multus NetworkAttachmentDefinition.
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, r.deleteMultusNetAttach(ctx, multusRef)
@@ -108,7 +106,7 @@ func (r *AttachDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	var currentMultusNetAttach = &netattachv1.NetworkAttachmentDefinition{}
 
-	if err := r.Get(ctx, multusRef, currentMultusNetAttach); err != nil {
+	if err = r.Get(ctx, multusRef, currentMultusNetAttach); err != nil {
 		if apierrors.IsNotFound(err) {
 			// Create.
 			return ctrl.Result{}, r.createMultusNetAttach(ctx, multusRef, cniConfig)
@@ -152,20 +150,7 @@ func (r *AttachDefinitionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&cniv1alpha1.AttachDefinition{}).
 		Named("AttachDefinitionReconciler").
-		WithEventFilter(predicate.Funcs{
-			CreateFunc: func(ce event.CreateEvent) bool {
-				return ce.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
-			},
-			UpdateFunc: func(ue event.UpdateEvent) bool {
-				return ue.ObjectNew.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName || ue.ObjectOld.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
-			},
-			DeleteFunc: func(de event.DeleteEvent) bool {
-				return de.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
-			},
-			GenericFunc: func(ge event.GenericEvent) bool {
-				return ge.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
-			},
-		}).
+		WithEventFilter(getEventFilter()).
 		Complete(r)
 }
 

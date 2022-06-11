@@ -22,12 +22,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/ErmakovDmitriy/linkerd-cni-attach-operator/constants"
 	netattachclient "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 )
 
@@ -70,19 +67,6 @@ func (r *MultusNetAttachDefinitionReconciler) SetupWithManager(mgr ctrl.Manager)
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&netattachclient.NetworkAttachmentDefinition{}).
 		Named("MultusNetAttachDefinitionReconciler").
-		WithEventFilter(predicate.Funcs{
-			CreateFunc: func(ce event.CreateEvent) bool {
-				return ce.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
-			},
-			UpdateFunc: func(ue event.UpdateEvent) bool {
-				return ue.ObjectNew.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName || ue.ObjectOld.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
-			},
-			DeleteFunc: func(de event.DeleteEvent) bool {
-				return de.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
-			},
-			GenericFunc: func(ge event.GenericEvent) bool {
-				return ge.Object.GetName() == constants.LinkerdCNINetworkAttachmentDefinitionName
-			},
-		}).
+		WithEventFilter(getEventFilter()).
 		Complete(r)
 }
